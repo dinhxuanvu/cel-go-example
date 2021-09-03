@@ -13,38 +13,50 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-func main() {
-	dec := cel.Declarations(
-	// Identifiers used within this expression.
-	decls.NewVar("ocpversion", decls.String),
-	// Function to generate a greeting from one person to another.
-	//    i.greet(you)
-	decls.NewFunction("semver_compare",
-		decls.NewOverload("semver_compare",
-			[]*expr.Type{decls.String, decls.String},
-			decls.Int)))
+type semverLib struct{}
 
-	e, _ := cel.NewEnv(dec)
+func (semverLib) CompileOptions() []cel.EnvOption {
+	return []cel.EnvOption{
+		cel.Declarations(
+			decls.NewFunction("semver_compare",
+				decls.NewInstanceOverload("semver_compare",
+					[]*expr.Type{decls.String, decls.String},
+					decls.Int))),
+	}
+}
+
+func (semverLib) ProgramOptions() []cel.ProgramOption {
+	return []cel.ProgramOption{
+		cel.Functions(
+			&functions.Overload{
+				Operator: "semver_compare",
+				Binary:   semverCompare,
+			},
+		),
+	}
+}
+
+func main() {
+	env, err := cel.NewEnv(cel.Lib(semverLib{}), cel.Declarations(
+		decls.NewVar("ocpversion", decls.String)))
+
+	if err != nil {
+		fmt.Printf("new env error: %s", err)
+	}
 
 	// Parse and check the expression.
-	p, issues := e.Parse("semver_compare(ocpversion, '4.8.0') == 1")
+	p, issues := env.Parse("ocpversion.semver_compare('4.8.0') != 1")
 	if issues != nil && issues.Err() != nil {
 		fmt.Printf("parse error: %s", issues.Err())
 	}
 
-	c, issues := e.Check(p)
+	c, issues := env.Check(p)
 	if issues != nil && issues.Err() != nil {
 		fmt.Printf("check error: %s", issues.Err())
 	}
 
-	funcs := cel.Functions(
-		&functions.Overload{
-			Operator: "semver_compare",
-			Binary:   SemverCompare,
-		})
-
 	// Evaluate the program against some inputs.
-	prg, err := e.Program(c, funcs)
+	prg, err := env.Program(c)
 	if err != nil {
 		fmt.Printf("program error: %s", err.Error())
 	}
@@ -58,7 +70,7 @@ func main() {
 	fmt.Println(out)
 }
 
-func SemverCompare(val1, val2 ref.Val) ref.Val {
+func semverCompare(val1, val2 ref.Val) ref.Val {
 	str, ok := val1.(types.String)
 	if !ok {
 		return types.ValOrErr(str, "unexpected type '%v'", val1.Type())
@@ -79,7 +91,5 @@ func SemverCompare(val1, val2 ref.Val) ref.Val {
 		return types.ValOrErr(str, "unable to parse '%v' to semver format", val2.Value())
 	}
 
-	result := v1.Compare(v2)
-
-	return types.Int(result)
+	return types.Int(v1.Compare(v2))
 }
