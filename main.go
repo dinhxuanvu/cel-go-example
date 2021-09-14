@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"encoding/json"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
@@ -38,14 +39,50 @@ func (semverLib) ProgramOptions() []cel.ProgramOption {
 
 func main() {
 	env, err := cel.NewEnv(cel.Lib(semverLib{}), cel.Declarations(
-		decls.NewVar("ocpversion", decls.String)))
+		decls.NewVar("ocpversion", decls.String), decls.NewIdent("properties", decls.NewMapType(decls.Any, decls.Any),nil)))
 
 	if err != nil {
 		fmt.Printf("new env error: %s", err)
 	}
 
+	string1 := `
+	{
+	  "group": "a1",
+	  "version": "b",
+	  "kind": "c"
+	}`
+
+	string2 := `
+	{
+	  "group": "a2",
+	  "version": "b",
+	  "kind": "c"
+	}`
+
+	var v interface{}
+	if err := json.Unmarshal([]byte(string1), &v); err != nil {
+		panic(err)
+	}
+
+	props := make([]map[string]interface{}, 2)
+	props[0] = map[string]interface{}{
+	"type":  "olm.gvk",
+	"value": v,
+	}
+
+	if err := json.Unmarshal([]byte(string2), &v); err != nil {
+		panic(err)
+	}
+
+	props[1] = map[string]interface{}{
+	"type":  "olm.gvk",
+	"value": v,
+	}
+
+	newpros := map[string]interface{}{"properties": props}
+
 	// Parse and check the expression.
-	p, issues := env.Parse("ocpversion.semver_compare('4.8.0') != 1")
+	p, issues := env.Parse("properties.exists(p, p.type == 'olm.gvk' && p.value == {'group': 'a1', 'version': 'b', 'kind': 'c'})")
 	if issues != nil && issues.Err() != nil {
 		fmt.Printf("parse error: %s", issues.Err())
 	}
@@ -61,7 +98,7 @@ func main() {
 		fmt.Printf("program error: %s", err.Error())
 	}
 
-	out, _, err := prg.Eval(map[string]interface{}{"ocpversion": "4.9.0"})
+	out, _, err := prg.Eval(newpros)
 	if err != nil {
 		fmt.Printf("eval error: %s", err.Error())
 	}
