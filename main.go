@@ -20,8 +20,8 @@ func (semverLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
 		cel.Declarations(
 			decls.NewFunction("semver_compare",
-				decls.NewInstanceOverload("semver_compare",
-					[]*expr.Type{decls.String, decls.String},
+				decls.NewOverload("semver_compare",
+					[]*expr.Type{decls.Any, decls.Any},
 					decls.Int))),
 	}
 }
@@ -45,12 +45,7 @@ func main() {
 		fmt.Printf("new env error: %s", err)
 	}
 
-	string1 := `
-	{
-	  "group": "a1",
-	  "version": "b",
-	  "kind": "c"
-	}`
+	string1 := `"4.9"`
 
 	string2 := `
 	{
@@ -66,7 +61,7 @@ func main() {
 
 	props := make([]map[string]interface{}, 2)
 	props[0] = map[string]interface{}{
-	"type":  "olm.gvk",
+	"type":  "olm.maxOpenShiftVersion",
 	"value": v,
 	}
 
@@ -82,7 +77,9 @@ func main() {
 	newpros := map[string]interface{}{"properties": props}
 
 	// Parse and check the expression.
-	p, issues := env.Parse("properties.exists(p, p.type == 'olm.gvk' && p.value == {'group': 'a1', 'version': 'b', 'kind': 'c'})")
+	p, issues := env.Parse("properties.exists(p, p.type == 'olm.maxOpenShiftVersion' && (semver_compare(p.value, 4.8) <= 0))")
+
+	//p, issues := env.Parse("properties.exists(p, p.type == 'olm.maxOpenShiftVersion' && p.value == {'group': 'a1', 'version': 'b', 'kind': 'c'})")
 	if issues != nil && issues.Err() != nil {
 		fmt.Printf("parse error: %s", issues.Err())
 	}
@@ -108,24 +105,24 @@ func main() {
 }
 
 func semverCompare(val1, val2 ref.Val) ref.Val {
-	str, ok := val1.(types.String)
-	if !ok {
-		return types.ValOrErr(str, "unexpected type '%v'", val1.Type())
-	}
+	// str, ok := val1.(types.String)
+	// if !ok {
+	// 	return types.ValOrErr(str, "unexpected type '%v'", val1.Type())
+	// }
+	//
+	// str2, ok := val2.(types.String)
+	// if !ok {
+	// 	return types.ValOrErr(str, "unexpected type '%v'", val2.Type())
+	// }
 
-	str2, ok := val2.(types.String)
-	if !ok {
-		return types.ValOrErr(str, "unexpected type '%v'", val2.Type())
-	}
-
-	v1, err := semver.ParseTolerant(string(str))
+	v1, err := semver.ParseTolerant(fmt.Sprint(val1.Value()))
 	if err != nil {
-		return types.ValOrErr(str, "unable to parse '%v' to semver format", val1.Value())
+		return types.ValOrErr(val1, "unable to parse '%v' to semver format", val1.Value())
 	}
 
-	v2, err := semver.ParseTolerant(string(str2))
+	v2, err := semver.ParseTolerant(fmt.Sprint(val2.Value()))
 	if err != nil {
-		return types.ValOrErr(str, "unable to parse '%v' to semver format", val2.Value())
+		return types.ValOrErr(val2, "unable to parse '%v' to semver format", val2.Value())
 	}
 
 	return types.Int(v1.Compare(v2))
